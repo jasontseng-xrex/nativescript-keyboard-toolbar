@@ -18,6 +18,7 @@ export class Toolbar extends ToolbarBase {
 	private keyboardNotificationObserver: any;
 	private hasIQKeyboardManagerInstalled: boolean = false;
 	private iqKeyboardManagerOriginalDistance: number = 0;
+	isShowingKeyboard = false
 
 
 	protected _loaded(): void {
@@ -49,6 +50,7 @@ export class Toolbar extends ToolbarBase {
 			}
 
 			this.hasFocus = true;
+			this.isShowingKeyboard = true;
 			// wrap in a timeout, to make sure this runs after 'UIKeyboardWillChangeFrameNotification'
 			setTimeout(() => {
 				const animateToY =
@@ -58,7 +60,7 @@ export class Toolbar extends ToolbarBase {
 						? 0
 						: this.lastHeight / screen.mainScreen.scale);
 				this.log("focus, animateToY: " + animateToY);
-
+				this.isShowingKeyboard = false;
 				parent
 					.animate({
 						translate: { x: 0, y: animateToY },
@@ -92,6 +94,10 @@ export class Toolbar extends ToolbarBase {
 
 			this.hasFocus = false;
 			setTimeout(() => {
+				if(this.isShowingKeyboard) {
+					this.isShowingKeyboard = false;
+					return;
+				}
 				const animateToY =
 					this.showWhenKeyboardHidden === true &&
 					this.showAtBottomWhenKeyboardHidden !== true
@@ -176,7 +182,13 @@ export class Toolbar extends ToolbarBase {
 
 		// TODO this can be reused on Android (but I haven't seen the underlying issue there (yet))
 		this.getViewForId(ATTEMPT_TIMES)
-			.then((view) => onViewForIdFound(view))
+			.then((view) => {
+				if(Array.isArray(view)) {
+                    view.forEach(viewItem => {onViewForIdFound(viewItem)});
+                } else {
+                    onViewForIdFound(view);
+                }
+			})
 			.catch(() =>
 				console.log(
 					`\n⌨ ⌨ ⌨ Please make sure forId="<view id>" resolves to a visible view, or the toolbar won't render correctly! Example: <Toolbar forId="myId" height="44">\n\n`
@@ -185,8 +197,8 @@ export class Toolbar extends ToolbarBase {
 	}
 
 	// depending on the framework (looking at you, Angular!) it may take longer to find the view, so here we try to get it asap (instead of a fixed 1sec timeout for instance)
-	private getViewForId(attemptsLeft: number): Promise<ViewBase> {
-		return new Promise<ViewBase>((resolve, reject) => {
+	private getViewForId(attemptsLeft: number): Promise<ViewBase | ViewBase[]> {
+		return new Promise<ViewBase | ViewBase[]>((resolve, reject) => {
 			if (attemptsLeft-- > 0) {
 				setTimeout(() => {
 					let pg;
@@ -204,10 +216,18 @@ export class Toolbar extends ToolbarBase {
                         resolve(this.forView)
 					}
 
-					const found =
-						page && page.modal
-							? page.modal.getViewById(this.forId)
-							: page && page.getViewById(this.forId);
+					let found: ViewBase | ViewBase[];
+                    if(Array.isArray(this.forId)) {
+                        found = this.forId.map(id => {
+                            return page && page.modal
+							? page.modal.getViewById(id)
+							: page && page.getViewById(id);
+                        });
+                    } else {
+                        found = page && page.modal
+						? page.modal.getViewById(this.forId)
+						: page && page.getViewById(this.forId);
+                    }
 					if (found) {
 						resolve(found);
 					} else {
@@ -215,7 +235,7 @@ export class Toolbar extends ToolbarBase {
 							.then(resolve)
 							.catch(reject);
 					}
-				}, attemptsLeft * 15);
+				}, attemptsLeft * 30);
 			} else {
 				reject();
 			}
